@@ -1,0 +1,50 @@
+1. final output is incorrect. Initially I was planning to get the high-freq
+   words from each worker to the coordinator and merge them... and them make
+   a third request to each of the worker to get the freq-values for each of the
+   high-freq word at coordinator (combined set)... 
+   This API will look like:
+   `unordered_map<string, long> getFreq(unordered_set<string> words)`
+   Note that this set includes the high-freq words from the other workers too.
+   In my solution, we didn't do that, hence overall-max-freq-word would be
+   incorrect.
+
+2. We are doing this 'sum_of_local_max_freq' business for no reason. In fact
+   sending the entire freq-map over network would cost only 18MB. That is not
+   big deal. ( 10^6 * (10 + 8)  = 18MB... assuming average word length = 10).
+   This way we don't need 3 APIs on a worker. A single API that returns
+   local-freq-map would be sufficient.
+
+3. if we calculate the hash for each dictionary word then probably of
+   collisions for one word = 10^6 / 10^19 ... which is very small.
+   Further - probability that their is no collisions at all = 10^12 / 10^19
+   which is still very small..
+   Now let's find a working hash function which guarantees ZERO collisions.
+
+   Let `long HashF(std::string, long prime)` is an implementation of hash
+   function, which takes a large prime in the input (instead of hardcoding in
+   the hash implementation)
+
+   let A = primes sequence.. {2, 3, 5, 7, .....}
+   long prime = A[0]
+   while (true) {
+    std::unordered_set<long> hash_set;
+    for each word in all_dictionary_word : { hash_set.insert(HashF(word, prime)) }
+    if (hash_set.size() == all_dictionary_word.size()) {
+      return prime;
+    }
+    prime = next_prime_from_sequence(A);
+   }
+
+   ^^ This algorithm will return a prime which is safe for us. Also this
+   algorithm will return very fast (because of probability calculations above)
+
+4. Once we find a safe prime number, we can either hardcode it in our hash
+   function and use that hash function in std::unordered_map.
+
+5. This will save the cost of data-transfer from the workers to coordinator.
+   coordinator will still need the map(hash -> word) at the final step. Which
+   is fine, because this compute can be done in postprocess step.
+   This will also eliminate the depdency on the word-size for the
+   memory-computation on each worker. We need only 16MB to store the entire
+   local freq map.. (excluding unordered_map overheads).
+
